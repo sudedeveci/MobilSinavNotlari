@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart'; // SQLite veritabanı işlemleri için
-import 'package:path/path.dart';       // Dosya yolu işlemleri için
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
 
-// Uygulama Giriş Ekranı ile başlar
 void main() => runApp(MaterialApp(home: GirisEkrani(), debugShowCheckedModeBanner: false));
 
 // ############################################################
-// 1. VERİTABANI YARDIMCISI (Kullanıcı ve Etkinlik Tabloları)
+// 1. VERİTABANI YARDIMCISI
 // ############################################################
 class DbHelper {
   static Database? _db;
@@ -16,33 +15,25 @@ class DbHelper {
     return _db;
   }
 
-  // Veritabanı ve tabloların oluşturulması
   initDb() async {
-    String yol = join(await getDatabasesPath(), "etkinlik_v3.db");
+    String yol = join(await getDatabasesPath(), "etkinlik_final.db");
     return await openDatabase(yol, version: 1, onCreate: (db, version) async {
-      // Etkinlikler Tablosu: Başlık, tarih, kişi sayısı ve resim yolu tutar
-      await db.execute("CREATE TABLE etkinlikler(id INTEGER PRIMARY KEY AUTOINCREMENT, baslik TEXT, tarih TEXT, kisiSayisi INTEGER, resim TEXT)");
-      // Kullanıcı Tablosu: Giriş yapmak için kullanıcı adı ve şifre tutar
+      // Tablo: Başlık, Tarih ve Kişi Sayısı kolonları var
+      await db.execute("CREATE TABLE etkinlikler(id INTEGER PRIMARY KEY AUTOINCREMENT, baslik TEXT, tarih TEXT, kisiSayisi INTEGER)");
+      // Giriş için kullanıcı tablosu
       await db.execute("CREATE TABLE kullanicilar(id INTEGER PRIMARY KEY AUTOINCREMENT, kadi TEXT, sifre TEXT)");
-      // Sınavda test edebilmek için varsayılan bir kullanıcı ekliyoruz
       await db.insert("kullanicilar", {"kadi": "admin", "sifre": "1234"});
     });
   }
 
-  // Kullanıcı adı ve şifrenin veritabanında kontrol edilmesi
   Future<bool> girisYap(String kadi, String sifre) async {
-    var dbClient = await db;
-    var res = await dbClient!.query("kullanicilar", where: "kadi = ? AND sifre = ?", whereArgs: [kadi, sifre]);
-    return res.isNotEmpty; // Liste doluysa giriş başarılıdır
+    var res = await (await db)!.query("kullanicilar", where: "kadi = ? AND sifre = ?", whereArgs: [kadi, sifre]);
+    return res.isNotEmpty;
   }
 
-  // Yeni etkinlik ekleme
   Future<int> ekle(Map<String, dynamic> veri) async => (await db)!.insert("etkinlikler", veri);
-  
-  // Tüm etkinlikleri listeleme
   Future<List<Map<String, dynamic>>> listele() async => (await db)!.query("etkinlikler");
   
-  // Seçilen ID'leri toplu olarak silme
   Future<void> secilileriSil(List<int> idler) async {
     var dbClient = await db;
     for (var id in idler) {
@@ -55,25 +46,23 @@ class DbHelper {
 // 2. GİRİŞ EKRANI
 // ############################################################
 class GirisEkrani extends StatelessWidget {
-  final tKadi = TextEditingController(); // Kullanıcı adı kontrolcüsü
-  final tSifre = TextEditingController(); // Şifre kontrolcüsü
+  final tKadi = TextEditingController();
+  final tSifre = TextEditingController();
   final dbH = DbHelper();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Etkinlik Planlayıcı Giriş"), backgroundColor: Colors.blueGrey),
+      appBar: AppBar(title: Text("Giriş Yap")),
       body: Padding(
         padding: EdgeInsets.all(20),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            TextField(controller: tKadi, decoration: InputDecoration(labelText: "Kullanıcı Adı (admin)")),
-            TextField(controller: tSifre, decoration: InputDecoration(labelText: "Şifre (1234)"), obscureText: true),
+            TextField(controller: tKadi, decoration: InputDecoration(labelText: "Kullanıcı Adı")),
+            TextField(controller: tSifre, decoration: InputDecoration(labelText: "Şifre"), obscureText: true),
             SizedBox(height: 20),
             ElevatedButton(
               onPressed: () async {
-                // Bilgiler doğruysa Ana Sayfaya geç ve bu ekranı kapat
                 if (await dbH.girisYap(tKadi.text, tSifre.text)) {
                   Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AnaSayfa()));
                 } else {
@@ -90,7 +79,7 @@ class GirisEkrani extends StatelessWidget {
 }
 
 // ############################################################
-// 3. ANA SAYFA (Etkinlik Listesi ve İşlemler)
+// 3. ANA SAYFA (LİSTELEME VE SİLME)
 // ############################################################
 class AnaSayfa extends StatefulWidget {
   @override
@@ -99,14 +88,14 @@ class AnaSayfa extends StatefulWidget {
 
 class _AnaSayfaState extends State<AnaSayfa> {
   final dbH = DbHelper();
-  List<int> silinecekler = []; // Checkbox ile işaretlenenlerin listesi
+  List<int> silinecekler = [];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text("Etkinlik Planlayıcı"), backgroundColor: Colors.red[900]),
       body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: dbH.listele(), // Veritabanından verileri çek
+        future: dbH.listele(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
           var liste = snapshot.data!;
@@ -119,14 +108,13 @@ class _AnaSayfaState extends State<AnaSayfa> {
                     var et = liste[index];
                     return Card(
                       child: ListTile(
-                        leading: CircleAvatar(backgroundColor: Colors.blue),
                         title: Text(et["baslik"]),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text("${et["tarih"]} - KS: ${et["kisiSayisi"]}"),
-                            // Ödev Şartı: Tıklanamayan/Hareket etmeyen Slider
-                            AbsorbPointer(child: Slider(value: 0.3, onChanged: (v) {})),
+                            Text("Tarih: ${et["tarih"]} - Kişi: ${et["kisiSayisi"]}"),
+                            // ÖDEV ŞARTI: Kullanıcının hareket ettiremediği slider
+                            AbsorbPointer(child: Slider(value: 0.5, onChanged: (v) {})),
                           ],
                         ),
                         trailing: Checkbox(
@@ -140,12 +128,16 @@ class _AnaSayfaState extends State<AnaSayfa> {
                   },
                 ),
               ),
-              ElevatedButton(
-                onPressed: () async {
-                  await dbH.secilileriSil(silinecekler); // İşaretlenenleri sil
-                  setState(() { silinecekler.clear(); });
-                },
-                child: Text("Seçilenleri Sil"),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900]),
+                  onPressed: () async {
+                    await dbH.secilileriSil(silinecekler);
+                    setState(() { silinecekler.clear(); });
+                  },
+                  child: Text("Seçilenleri Sil", style: TextStyle(color: Colors.white)),
+                ),
               )
             ],
           );
@@ -160,7 +152,7 @@ class _AnaSayfaState extends State<AnaSayfa> {
 }
 
 // ############################################################
-// 4. EKLEME EKRANI (Yeni Veri Girişi)
+// 4. YENİ ETKİNLİK EKLEME EKRANI
 // ############################################################
 class EklemeEkrani extends StatefulWidget {
   @override
@@ -168,39 +160,39 @@ class EklemeEkrani extends StatefulWidget {
 }
 
 class _EklemeEkraniState extends State<EklemeEkrani> {
-  double kisiSayisi = 100; // Slider başlangıç değeri
+  double kisiSayisi = 100;
   final tBaslik = TextEditingController();
-  String secilenTarih = "Tarih Seçin";
+  String secilenTarih = "Tarih Seçilmedi";
   final dbH = DbHelper();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Yeni Etkinlik"), backgroundColor: Colors.grey),
+      appBar: AppBar(title: Text("Yeni Etkinlik")),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(20),
         child: Column(
           children: [
             Text("Kişi Sayısı: ${kisiSayisi.toInt()}"),
+            // Kullanıcının hareket ettirebildiği Slider
             Slider(value: kisiSayisi, min: 0, max: 1000, onChanged: (v) => setState(() => kisiSayisi = v)),
             TextField(controller: tBaslik, decoration: InputDecoration(labelText: "Etkinlik Adı")),
-            SizedBox(height: 10),
+            SizedBox(height: 15),
             ElevatedButton(
               onPressed: () async {
-                // Takvimi aç ve tarih seç
                 DateTime? dt = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime(2030));
                 if (dt != null) setState(() => secilenTarih = dt.toString().split(' ')[0]);
               },
               child: Text(secilenTarih),
             ),
-            SizedBox(height: 20),
+            SizedBox(height: 30),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
               onPressed: () async {
-                // Verileri kaydet ve geri dön
-                await dbH.ekle({"baslik": tBaslik.text, "tarih": secilenTarih, "kisiSayisi": kisiSayisi.toInt(), "resim": ""});
+                await dbH.ekle({"baslik": tBaslik.text, "tarih": secilenTarih, "kisiSayisi": kisiSayisi.toInt()});
                 Navigator.pop(context);
               },
-              child: Text("Kaydet ve Ana Sayfaya Dön"),
+              child: Text("KAYDET"),
             )
           ],
         ),
